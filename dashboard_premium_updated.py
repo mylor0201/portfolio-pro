@@ -684,14 +684,15 @@ def get_bank_rate_history(start_date: str, end_date: str) -> pd.DataFrame:
         # As of 2026, average 12-month savings rate for major banks is typically 4.5-5.5%
         current_rate = 0.048  # 4.8% - conservative estimate
     
-    # Build historical data using the current rate
-    annual_rate = current_rate
-    daily_rate = (1 + annual_rate) ** (1/252) - 1
-    cumulative = [100 * ((1 + daily_rate) ** i) for i in range(len(dates))]
+    # Build historical data using the annual rate as percentage
+    # Return cumulative returns based on daily compounding
+    annual_rate_pct = current_rate * 100  # Convert to percentage for display
+    daily_rate = (1 + current_rate) ** (1/252) - 1
+    cumulative = [annual_rate_pct + (annual_rate_pct * daily_rate * i) for i in range(len(dates))]
     
     return pd.DataFrame({
         'time': dates,
-        'close': cumulative
+       'close': cumulative
     })
 
 
@@ -1644,12 +1645,7 @@ with st.sidebar:
     if not YFINANCE_AVAILABLE:
         st.error("❌ Cài đặt yfinance: `pip install yfinance`")
     
-    st.markdown("---")
-    
-    # Set data_source for compatibility (not used by Yahoo Finance)
-    data_source = "Yahoo Finance"
-    
-    st.markdown("---")
+
 
 
     
@@ -2314,43 +2310,75 @@ else:
         st.info("💡 **Phương pháp**: Tính Beta từ correlation giữa từng cổ phiếu với VN-Index, sau đó weighted average theo tỷ trọng portfolio")
         
         # Calculate beta for each stock and portfolio
+        stock_betas = {}
+        portfolio_beta = 1.0
+        data_source = "Yahoo Finance"  # Set data source
+        
         try:
             # Fetch VN-Index data
             vnindex_df = get_vnindex_history(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
             
             if not vnindex_df.empty and 'close' in vnindex_df.columns:
+                # Ensure time column is datetime
+                if 'time' in vnindex_df.columns:
+                    vnindex_df['time'] = pd.to_datetime(vnindex_df['time'])
+                    vnindex_df = vnindex_df.set_index('time')
+                
                 vnindex_returns = vnindex_df['close'].pct_change().dropna()
                 
-                stock_betas = {}
-                for symbol in holdings.keys():
-                    df = get_stock_price_history(symbol, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), data_source)
-                    if not df.empty and 'close' in df.columns:
-                        stock_returns = df['close'].pct_change().dropna()
-                        
-                        # Align dates
-                        common_dates = stock_returns.index.intersection(vnindex_returns.index)
-                        if len(common_dates) > 10:
-                            stock_ret_aligned = stock_returns.loc[common_dates]
-                            market_ret_aligned = vnindex_returns.loc[common_dates]
+                if len(vnindex_returns) >= 20:
+                    for symbol in holdings.keys():
+                        try:
+                            df = get_stock_price_history(symbol, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), data_source)
                             
-                            # Calculate beta: Cov(stock, market) / Var(market)
-                            covariance = np.cov(stock_ret_aligned, market_ret_aligned)[0][1]
-                            market_variance = np.var(market_ret_aligned)
-                            beta = covariance / market_variance if market_variance > 0 else 1.0
-                            stock_betas[symbol] = beta
-                        else:
+                            if not df.empty and 'close' in df.columns:
+                                # Ensure time column is datetime and set as index
+                                if 'time' in df.columns:
+                                    df['time'] = pd.to_datetime(df['time'])
+                                    df = df.set_index('time')
+                                
+                                stock_returns = df['close'].pct_change().dropna()
+                                
+                                # Align indices
+                                common_idx = stock_returns.index.intersection(vnindex_returns.index)
+                                
+                                if len(common_idx) >= 20:
+                                    stock_ret_aligned = stock_returns.loc[common_idx].values
+                                    market_ret_aligned = vnindex_returns.loc[common_idx].values
+                                    
+                                    # Calculate beta: Cov(stock, market) / Var(market)
+                                    covariance = np.cov(stock_ret_aligned, market_ret_aligned)[0][1]
+                                    market_variance = np.var(market_ret_aligned)
+                                    
+                                    if market_variance > 0:
+                                        beta = covariance / market_variance
+                                        # Sanity check
+                                        if -2 <= beta <= 3:
+                                            stock_betas[symbol] = round(beta, 2)
+                                        else:
+                                            stock_betas[symbol] = 1.0
+                                    else:
+                                        stock_betas[symbol] = 1.0
+                                else:
+                                    stock_betas[symbol] = 1.0
+                            else:
+                                stock_betas[symbol] = 1.0
+                        except Exception as e:
+                            # Show warning but continue
+                            st.caption(f"⚠️ Beta {symbol}: {str(e)[:50]}")
                             stock_betas[symbol] = 1.0
-                    else:
-                        stock_betas[symbol] = 1.0
-                
-                # Calculate portfolio beta (weighted average)
-                portfolio_beta = sum(stock_betas.get(sym, 1.0) * current_weights.get(sym, 0) / 100 
-                                    for sym in holdings.keys())
+                    
+                    # Calculate portfolio beta (weighted average)
+                    if stock_betas:
+                        portfolio_beta = sum(stock_betas.get(sym, 1.0) * current_weights.get(sym, 0) / 100 
+                                            for sym in holdings.keys())
+                        portfolio_beta = round(portfolio_beta, 2)
+                else:
+                    stock_betas = {sym: 1.0 for sym in holdings.keys()}
             else:
-                portfolio_beta = 1.0
                 stock_betas = {sym: 1.0 for sym in holdings.keys()}
-        except:
-            portfolio_beta = 1.0
+        except Exception as e:
+            st.warning(f"⚠️ Không thể tính Beta: {str(e)}")
             stock_betas = {sym: 1.0 for sym in holdings.keys()}
         
         # Display individual betas
