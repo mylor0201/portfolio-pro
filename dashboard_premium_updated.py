@@ -15,13 +15,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import math
 
-# Import vnstock
+# Import yfinance for stock data
 try:
-    from vnstock import Vnstock
-    VNSTOCK_AVAILABLE = True
+    import yfinance as yf
+    YFINANCE_AVAILABLE = True
 except ImportError:
-    VNSTOCK_AVAILABLE = False
-    st.warning("⚠️ vnstock chưa được cài đặt. Chạy: pip install vnstock")
+    YFINANCE_AVAILABLE = False
+    st.warning("⚠️ yfinance chưa được cài đặt. Chạy: pip install yfinance")
+
 
 # Import PDF generator
 try:
@@ -377,24 +378,44 @@ class Holding:
     weight: float = 0.0  # Portfolio weight %
 
 
-# ============== VNSTOCK DATA FUNCTIONS ==============
+# ============== YFINANCE DATA FUNCTIONS ==============
 @st.cache_data(ttl=300)  # Cache 5 phút
 def get_stock_price_history(symbol: str, start_date: str, end_date: str, source: str = 'VCI') -> pd.DataFrame:
-    """Lấy lịch sử giá cổ phiếu từ vnstock với retry logic"""
-    sources_to_try = [source, 'TCBS', 'VCI'] if source != 'VCI' else ['VCI', 'TCBS']
+    """Lấy lịch sử giá cổ phiếu từ Yahoo Finance"""
+    try:
+        # Convert to Yahoo Finance format: VCB → VCB.VN
+        yf_symbol = f"{symbol}.VN" if not symbol.endswith('.VN') else symbol
+        
+        # Fetch data from Yahoo Finance
+        ticker = yf.Ticker(yf_symbol)
+        df = ticker.history(start=start_date, end=end_date)
+        
+        if df is not None and not df.empty:
+            # Rename columns to match vnstock format
+            df = df.reset_index()
+            df.columns = df.columns.str.lower()
+            df = df.rename(columns={
+                'date': 'time',
+                'close': 'close',
+                'open': 'open',
+                'high': 'high',
+                'low': 'low',
+                'volume': 'volume'
+            })
+            
+            # Yahoo Finance returns prices in actual VND (not thousands)
+            # So we need to divide by 1000 to match vnstock format
+            for col in ['close', 'open', 'high', 'low']:
+                if col in df.columns:
+                    df[col] = df[col] / 1000
+            
+            return df
+    except Exception as e:
+        # Silent fail - return empty DataFrame
+        pass
     
-    for src in sources_to_try:
-        try:
-            stock = Vnstock().stock(symbol=symbol, source=src)
-            df = stock.quote.history(start=start_date, end=end_date)
-            if df is not None and not df.empty:
-                return df
-        except Exception as e:
-            # Try next source
-            continue
-    
-    # All sources failed - return empty
     return pd.DataFrame()
+
 
 
 @st.cache_data(ttl=300)
@@ -1620,8 +1641,8 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     
-    if not VNSTOCK_AVAILABLE:
-        st.error("❌ Cài đặt vnstock: `pip install vnstock`")
+    if not YFINANCE_AVAILABLE:
+        st.error("❌ Cài đặt yfinance: `pip install yfinance`")
     
     st.markdown("---")
     
