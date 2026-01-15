@@ -1796,10 +1796,10 @@ with st.sidebar:
 
     
     if not VNSTOCK_AVAILABLE:
-        st.error("❌ **vnstock** là bắt buộc để lấy dữ liệu chứng khoán VN")
+        st.warning("⚠️ **vnstock** chưa được cài đặt")
         st.markdown("**Cài đặt:**")
         st.code("pip install vnstock3", language="bash")
-        st.info("💡 Sau khi cài đặt, khởi động lại dashboard")
+        st.caption("💡 Sau khi cài, restart dashboard. Benchmark data sẽ không hiện nếu chưa cài.")
 
     
 
@@ -2199,7 +2199,16 @@ else:
         # Check if we have multiple benchmarks
         benchmark_returns_dict = data.get('benchmark_returns', {})
         
-        if benchmark_returns_dict and len(benchmark_returns_dict) > 1:
+        # DEBUG: Show what benchmarks we have
+        if benchmark_returns_dict:
+            st.caption(f"📊 DEBUG: Loaded {len(benchmark_returns_dict)} benchmarks: {list(benchmark_returns_dict.keys())}")
+            for name, rets in benchmark_returns_dict.items():
+                st.caption(f"  - {name}: {len(rets)} data points" + (f", last={rets[-1]:.2f}%" if rets else " (EMPTY)"))
+        else:
+            st.caption("⚠️ DEBUG: No benchmark data loaded")
+        
+        # Use multi-benchmark chart if we have ANY benchmarks (not just >1)
+        if benchmark_returns_dict and len(benchmark_returns_dict) >= 1:
             # Use multi-benchmark chart
             st.plotly_chart(create_multi_benchmark_chart(
                 data['dates'], 
@@ -2438,6 +2447,16 @@ else:
             keys_to_remove = [k for k in st.session_state.keys() if k.startswith('rebal_target_')]
             for k in keys_to_remove:
                 del st.session_state[k]
+        
+        # Add reset button before the layout
+        if st.button("🔄 Reset về phân bổ đều", key="reset_rebal"):
+            # Clear all target weight keys from session state
+            keys_to_clear = [k for k in st.session_state.keys() if k.startswith('rebal_target_')]
+            for k in keys_to_clear:
+                del st.session_state[k]
+            st.rerun()
+        
+        st.caption("💡 Điều chỉnh tỷ trọng mục tiêu. Tổng phải = 100%")
         
         # Two-column layout with equal styling
         col1, col_arrow, col2 = st.columns([2, 0.5, 2])
