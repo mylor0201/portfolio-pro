@@ -2240,79 +2240,254 @@ else:
     
     st.markdown("---")
     
-    # ============== EXPORT ==============
-    st.markdown("## 📤 Xuất Báo Cáo")
+    # ============== ADVANCED TOOLS ==============
+    st.markdown("## � Advanced Tools")
     
-    col1, col2, col3 = st.columns(3)
+    tabs = st.tabs(["🔄 Rebalancing", "⚠️ Risk Scenarios", " Correlation"])
+    
+    # TAB 1: Portfolio Rebalancing
+    with tabs[0]:
+        st.markdown("### 📊 Portfolio Rebalancing Tool")
+        st.caption("Tính toán lệnh mua/bán để đạt tỷ trọng mục tiêu")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### Tỷ trọng hiện tại")
+            current_weights = {}
+            for symbol in holdings.keys():
+                weight = holdings[symbol].get('weight', 0) if isinstance(holdings[symbol], dict) else holdings[symbol]
+                current_weights[symbol] = weight
+                st.metric(symbol, f"{weight:.1f}%")
+        
+        with col2:
+            st.markdown("#### Tỷ trọng mục tiêu")
+            target_weights = {}
+            for symbol in holdings.keys():
+                current = current_weights[symbol]
+                target = st.number_input(
+                    f"{symbol} (%)", 
+                    min_value=0.0, 
+                    max_value=100.0, 
+                    value=float(current),
+                    step=0.1,
+                    key=f"target_{symbol}"
+                )
+                target_weights[symbol] = target
+        
+        total_target = sum(target_weights.values())
+        if abs(total_target - 100) > 0.1:
+            st.warning(f"⚠️ Tổng tỷ trọng mục tiêu: {total_target:.1f}% (cần = 100%)")
+        else:
+            st.success("✅ Tỷ trọng mục tiêu hợp lệ")
+            
+            # Calculate rebalancing
+            st.markdown("#### 📋 Khuyến nghị rebalancing")
+            
+            portfolio_value = st.number_input(
+                "Tổng giá trị danh mục (VNĐ)", 
+                min_value=0, 
+                value=100_000_000, 
+                step=1_000_000,
+                format="%d"
+            )
+            
+            rebalance_data = []
+            for symbol in holdings.keys():
+                current_pct = current_weights[symbol]
+                target_pct = target_weights[symbol]
+                diff_pct = target_pct - current_pct
+                diff_value = portfolio_value * (diff_pct / 100)
+                
+                # Get current price
+                entry_price = holdings[symbol].get('entry_price', 50000) if isinstance(holdings[symbol], dict) else 50000
+                shares_diff = int(diff_value / entry_price)
+                
+                action = "Mua" if shares_diff > 0 else "Bán" if shares_diff < 0 else "Giữ"
+                
+                rebalance_data.append({
+                    'Mã': symbol,
+                    'Hiện tại': f"{current_pct:.1f}%",
+                    'Mục tiêu': f"{target_pct:.1f}%",
+                    'Chênh lệch': f"{diff_pct:+.1f}%",
+                    'Hành động': action,
+                    'Số lượng': abs(shares_diff) if shares_diff != 0 else "-",
+                    'Giá trị': f"{abs(diff_value):,.0f}" if diff_value != 0 else "-"
+                })
+            
+            df_rebalance = pd.DataFrame(rebalance_data)
+            st.dataframe(df_rebalance, use_container_width=True, hide_index=True)
+    
+    # TAB 2: Risk Scenario Analysis
+    with tabs[1]:
+        st.markdown("### ⚠️ Risk Scenario Analysis")
+        st.caption("Dự đoán tổn thất portfolio trong các kịch bản thị trường")
+        
+        # Calculate portfolio beta (simplified - assume 1.0 for demo)
+        portfolio_beta = 1.0
+        
+        scenarios = [
+            {"name": "VN-Index -5%", "market_drop": -5},
+            {"name": "VN-Index -10%", "market_drop": -10},
+            {"name": "VN-Index -15%", "market_drop": -15},
+            {"name": "VN-Index -20%", "market_drop": -20},
+            {"name": "VN-Index -30%", "market_drop": -30},
+        ]
+        
+        scenario_results = []
+        for scenario in scenarios:
+            market_drop = scenario["market_drop"]
+            portfolio_drop = market_drop * portfolio_beta
+            
+            # Color based on severity
+            if portfolio_drop > -10:
+                severity = "🟢 Thấp"
+                color = "green"
+            elif portfolio_drop > -20:
+                severity = "🟡 Trung bình"
+                color = "orange"
+            else:
+                severity = "🔴 Cao"
+                color = "red"
+            
+            scenario_results.append({
+                'Kịch bản': scenario["name"],
+                'Dự đoán Portfolio': f"{portfolio_drop:+.1f}%",
+                'Mức độ rủi ro': severity
+            })
+        
+        df_scenarios = pd.DataFrame(scenario_results)
+        st.dataframe(df_scenarios, use_container_width=True, hide_index=True)
+        
+        # Visualization
+        import plotly.graph_objects as go
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Bar(
+            x=[s["market_drop"] for s in scenarios],
+            y=[s["market_drop"] * portfolio_beta for s in scenarios],
+            marker_color=['#00c853' if x > -10 else '#ff9800' if x > -20 else '#f44336' 
+                         for x in [s["market_drop"] * portfolio_beta for s in scenarios]],
+            text=[f"{s['market_drop'] * portfolio_beta:.1f}%" for s in scenarios],
+            textposition='outside'
+        ))
+        
+        fig.update_layout(
+            title="Dự Đoán Tổn Thất Portfolio",
+            xaxis_title="Thị trường giảm (%)",
+            yaxis_title="Portfolio giảm (%)",
+            showlegend=False,
+            height=400,
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='white')
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.info(f"💡 **Portfolio Beta**: {portfolio_beta:.2f} (dự đoán portfolio sẽ di chuyển tương tự thị trường)")
+    
+    # TAB 3: Correlation Matrix
+    with tabs[2]:
+        st.markdown("### 🔗 Correlation Matrix")
+        st.caption("Ma trận tương quan giữa các cổ phiếu trong danh mục")
+        
+        try:
+            # Calculate correlation matrix from price data
+            symbols = list(holdings.keys())
+            
+            # Fetch price data for all symbols
+            price_data = {}
+            for symbol in symbols:
+                df = get_stock_price_history(symbol, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), data_source)
+                if not df.empty and 'close' in df.columns:
+                    price_data[symbol] = df['close']
+            
+            if len(price_data) >= 2:
+                # Create DataFrame
+                df_prices = pd.DataFrame(price_data)
+                
+                # Calculate returns
+                df_returns = df_prices.pct_change().dropna()
+                
+                # Calculate correlation
+                corr_matrix = df_returns.corr()
+                
+                # Create heatmap
+                fig = go.Figure(data=go.Heatmap(
+                    z=corr_matrix.values,
+                    x=corr_matrix.columns,
+                    y=corr_matrix.index,
+                    colorscale='RdYlGn',
+                    zmid=0,
+                    text=np.round(corr_matrix.values, 2),
+                    texttemplate='%{text}',
+                    textfont={"size": 10},
+                    colorbar=dict(title="Correlation")
+                ))
+                
+                fig.update_layout(
+                    title="Ma Trận Tương Quan Giá Cổ Phiếu",
+                    xaxis_title="",
+                    yaxis_title="",
+                    height=500,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='white')
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Insights
+                st.markdown("#### 📊 Insights")
+                
+                # Find highest correlations
+                corr_pairs = []
+                for i in range(len(corr_matrix.columns)):
+                    for j in range(i+1, len(corr_matrix.columns)):
+                        corr_pairs.append({
+                            'Cặp': f"{corr_matrix.columns[i]} - {corr_matrix.columns[j]}",
+                            'Correlation': corr_matrix.iloc[i, j]
+                        })
+                
+                df_corr_pairs = pd.DataFrame(corr_pairs).sort_values('Correlation', ascending=False)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**🔴 Tương quan cao nhất** (move cùng nhau)")
+                    high_corr = df_corr_pairs.head(3)
+                    for _, row in high_corr.iterrows():
+                        st.metric(row['Cặp'], f"{row['Correlation']:.2f}")
+                
+                with col2:
+                    st.markdown("**🟢 Tương quan thấp nhất** (đa dạng hóa tốt)")
+                    low_corr = df_corr_pairs.tail(3)
+                    for _, row in low_corr.iterrows():
+                        st.metric(row['Cặp'], f"{row['Correlation']:.2f}")
+                
+                st.info("💡 **Tip**: Cổ phiếu có correlation thấp giúp giảm rủi ro portfolio thông qua đa dạng hóa.")
+                
+            else:
+                st.warning("⚠️ Cần ít nhất 2 mã có dữ liệu để tính correlation")
+                
+        except Exception as e:
+            st.error(f"❌ Không thể tính correlation matrix: {str(e)}")
+    
+    st.markdown("---")
+    
+    # Quick export options
+    col1, col2 = st.columns(2)
     
     with col1:
-        if PDF_AVAILABLE:
-            if st.button("📄 Tạo PDF", type="primary", use_container_width=True, key="pdf_export_main"):
-                with st.spinner("🔄 Đang tạo báo cáo PDF..."):
-                    try:
-                        # Convert holdings format for report generator
-                        holdings_for_report = {}
-                        
-                        # Check format
-                        first_value = next(iter(holdings.values()))
-                        is_new_format = isinstance(first_value, dict)
-                        
-                        if is_new_format:
-                            holdings_for_report = {
-                                symbol: info['weight'] 
-                                for symbol, info in holdings.items()
-                            }
-                        else:
-                            holdings_for_report = holdings
-                        
-                        # Generate report
-                        report = ReportGenerator(
-                            client_name="Khách hàng",
-                            holdings=holdings_for_report,
-                            start_date=start_date.strftime('%Y-%m-%d'),
-                            end_date=end_date.strftime('%Y-%m-%d')
-                        )
-                        
-                        # Generate PDF to temp file
-                        import tempfile
-                        import os
-                        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-                            pdf_path = tmp_file.name
-                            report.generate(pdf_path)
-                            
-                            # Read PDF file
-                            with open(pdf_path, 'rb') as f:
-                                pdf_bytes = f.read()
-                            
-                            # Provide download button
-                            st.download_button(
-                                label="⬇️ Tải xuống PDF",
-                                data=pdf_bytes,
-                                file_name=f"Portfolio_Report_{datetime.now().strftime('%Y%m%d')}.pdf",
-                                mime="application/pdf",
-                                use_container_width=True,
-                                key="download_pdf_main"
-                            )
-                            
-                            # Clean up temp file
-                            os.unlink(pdf_path)
-                            
-                        st.success("✅ Báo cáo đã sẵn sàng!")
-                                
-                    except Exception as e:
-                        st.error(f"❌ Lỗi: {str(e)}")
-                        st.info("💡 Cài đặt: `pip install fpdf matplotlib`")
-        else:
-            st.button("📄 Tạo PDF", type="primary", use_container_width=True, disabled=True)
-            st.caption("⚠️ Cần cài fpdf matplotlib")
-    
-    with col2:
         csv = pd.DataFrame(data['stock_metrics']).to_csv(index=False).encode('utf-8')
         st.download_button("📊 Tải CSV", csv, "portfolio.csv", "text/csv", use_container_width=True)
     
-    with col3:
+    with col2:
         if st.button("🔄 Phân Tích Lại", use_container_width=True):
             st.rerun()
+
 
 
 # ============== FOOTER ==============
