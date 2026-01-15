@@ -380,14 +380,20 @@ class Holding:
 # ============== VNSTOCK DATA FUNCTIONS ==============
 @st.cache_data(ttl=300)  # Cache 5 phút
 def get_stock_price_history(symbol: str, start_date: str, end_date: str, source: str = 'VCI') -> pd.DataFrame:
-    """Lấy lịch sử giá cổ phiếu từ vnstock"""
-    try:
-        stock = Vnstock().stock(symbol=symbol, source=source)
-        df = stock.quote.history(start=start_date, end=end_date)
-        if df is not None and not df.empty:
-            return df
-    except Exception as e:
-        st.warning(f"⚠️ Không thể lấy dữ liệu {symbol}: {e}")
+    """Lấy lịch sử giá cổ phiếu từ vnstock với retry logic"""
+    sources_to_try = [source, 'TCBS', 'VCI'] if source != 'VCI' else ['VCI', 'TCBS']
+    
+    for src in sources_to_try:
+        try:
+            stock = Vnstock().stock(symbol=symbol, source=src)
+            df = stock.quote.history(start=start_date, end=end_date)
+            if df is not None and not df.empty:
+                return df
+        except Exception as e:
+            # Try next source
+            continue
+    
+    # All sources failed - return empty
     return pd.DataFrame()
 
 
@@ -1843,15 +1849,27 @@ else:
         # New format with entry dates - calculate total invested for weight validation
         total_invested = sum(h['shares'] * h['entry_price'] for h in holdings.values() if h['entry_price'] > 0)
         if total_invested == 0:
-            st.error("⚠️ Tổng giá trị đầu tư = 0. Vui lòng kiểm tra dữ liệu nhập.")
+            st.error("⚠️ Tổng giá trị đầu tư = 0. Không thể fetch giá từ API.")
+            st.info("💡 **Giải pháp**: Thử lại sau vài phút hoặc dùng CSV upload với giá chính xác.")
+            st.stop()
         else:
             # Calculate weights based on investment amount
             for symbol in holdings:
                 if holdings[symbol]['shares'] > 0 and holdings[symbol]['entry_price'] > 0:
                     holdings[symbol]['weight'] = (holdings[symbol]['shares'] * holdings[symbol]['entry_price'] / total_invested * 100)
             
-            with st.spinner("🔄 Analyzing market data..."):
-                data = fetch_portfolio_data_enhanced(holdings, start_date, end_date, selected_benchmarks)
+            try:
+                with st.spinner("🔄 Analyzing market data..."):
+                    data = fetch_portfolio_data_enhanced(holdings, start_date, end_date, selected_benchmarks)
+                    
+                # Check if data is valid
+                if not data or 'metrics' not in data:
+                    st.error("❌ Không thể load dữ liệu portfolio. API có thể đang bị lỗi.")
+                    st.stop()
+            except Exception as e:
+                st.error(f"❌ Lỗi khi phân tích dữ liệu: {str(e)}")
+                st.info("💡 Thử lại sau hoặc liên hệ support.")
+                st.stop()
     else:
         # Old format - just weights
         total_weight = sum(holdings.values())
@@ -1860,8 +1878,16 @@ else:
             factor = 100 / total_weight
             holdings = {k: v * factor for k, v in holdings.items()}
         
-        with st.spinner("🔄 Analyzing market data..."):
-            data = fetch_portfolio_data(holdings, start_date, end_date)
+        try:
+            with st.spinner("🔄 Analyzing market data..."):
+                data = fetch_portfolio_data(holdings, start_date, end_date)
+                
+            if not data or 'metrics' not in data:
+                st.error("❌ Không thể load dữ liệu portfolio.")
+                st.stop()
+        except Exception as e:
+            st.error(f"❌ Lỗi: {str(e)}")
+            st.stop()
     
     metrics = data['metrics']
     
