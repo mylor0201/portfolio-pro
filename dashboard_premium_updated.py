@@ -2247,7 +2247,7 @@ else:
     
     with col1:
         if PDF_AVAILABLE:
-            if st.button("📄 Tạo PDF (Pro)", type="primary", use_container_width=True, key="pdf_export_main"):
+            if st.button("📄 Tạo PDF", type="primary", use_container_width=True, key="pdf_export_main"):
                 with st.spinner("🔄 Đang tạo báo cáo PDF..."):
                     try:
                         # Convert holdings format for report generator
@@ -2303,7 +2303,7 @@ else:
                         st.error(f"❌ Lỗi: {str(e)}")
                         st.info("💡 Cài đặt: `pip install fpdf matplotlib`")
         else:
-            st.button("📄 Tạo PDF (Pro)", type="primary", use_container_width=True, disabled=True)
+            st.button("📄 Tạo PDF", type="primary", use_container_width=True, disabled=True)
             st.caption("⚠️ Cần cài fpdf matplotlib")
     
     with col2:

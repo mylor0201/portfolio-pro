@@ -8,7 +8,7 @@ Sử dụng:
     report.generate('output.pdf')
 """
 
-from fpdf import FPDF
+from fpdf2 import FPDF
 import pandas as pd
 import numpy as np
 from datetime import datetime
