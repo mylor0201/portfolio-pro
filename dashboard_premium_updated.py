@@ -1646,8 +1646,8 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Data source selection
-    data_source = st.selectbox("📡 Nguồn dữ liệu", ["VCI", "TCBS"], help="VCI (Vietcap) hoặc TCBS")
+    # Set data_source for compatibility (not used by Yahoo Finance)
+    data_source = "Yahoo Finance"
     
     # Refresh data button
     col1, col2 = st.columns([3, 1])
@@ -1664,24 +1664,6 @@ with st.sidebar:
         st.caption(f"⏰ {current_time}")
     
     st.markdown("---")
-    
-    # Data sources info
-    with st.expander("ℹ️ Nguồn dữ liệu", expanded=False):
-        st.markdown("""
-        **Dữ liệu thị trường:**
-        - � Giá cổ phiếu: vnstock API (VCI/TCBS)
-        - 📊 VN-Index, VN30, HNX: vnstock
-        
-        **Dữ liệu benchmark:**
-        - 🏅 Giá vàng SJC: sjc.com.vn
-        - 🏦 Lãi suất NH: Trung bình 8 NH lớn
-          - Vietcombank, BIDV, VietinBank
-          - ACB, Techcombank, VPBank
-          - MB Bank, Sacombank
-        
-        📌 Dữ liệu được cache 1 giờ
-        🔄 Nhấn "Refresh" để cập nhật thủ công
-        """)
 
 
     
