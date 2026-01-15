@@ -866,7 +866,7 @@ def fetch_portfolio_data_enhanced(holdings: Dict[str, dict], start_date: datetim
         progress_bar.progress((i + 1) / max(len(symbols), 1))
         
         # Get price history
-        df = get_stock_price_history(symbol, start_str, end_str)
+        df = get_stock_price_history(symbol, start_str, end_str, source="Yahoo Finance")
         profile = get_stock_profile(symbol)
         
         holding_info = holdings[symbol]
