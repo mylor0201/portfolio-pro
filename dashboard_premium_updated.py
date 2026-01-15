@@ -409,6 +409,11 @@ def get_stock_price_history(symbol: str, start_date: str, end_date: str, source:
                 if col in df.columns:
                     df[col] = df[col] / 1000
             
+            # Ensure sorted by time ascending
+            if 'time' in df.columns:
+                df['time'] = pd.to_datetime(df['time'])
+                df = df.sort_values('time', ascending=True).reset_index(drop=True)
+            
             return df
     except Exception as e:
         # Silent fail - return empty DataFrame
@@ -509,6 +514,10 @@ def get_vnindex_history(start_date: str, end_date: str) -> pd.DataFrame:
         stock = Vnstock().stock(symbol='VNINDEX', source='VCI')
         df = stock.quote.history(start=start_date, end=end_date)
         if df is not None and not df.empty and 'close' in df.columns:
+            # Ensure sorted by time ascending
+            if 'time' in df.columns:
+                df['time'] = pd.to_datetime(df['time'])
+                df = df.sort_values('time', ascending=True).reset_index(drop=True)
             return df
     except Exception as e:
         pass
@@ -524,6 +533,8 @@ def get_vnindex_history(start_date: str, end_date: str) -> pd.DataFrame:
                 df = df.rename(columns={'Date': 'time', 'Close': 'close', 'Open': 'open', 
                                        'High': 'high', 'Low': 'low', 'Volume': 'volume'})
                 df['time'] = pd.to_datetime(df['time']).dt.tz_localize(None)
+                # Ensure sorted by time ascending
+                df = df.sort_values('time', ascending=True).reset_index(drop=True)
                 return df[['time', 'open', 'high', 'low', 'close', 'volume']]
         except Exception as e:
             pass
@@ -557,6 +568,10 @@ def get_vn30_history(start_date: str, end_date: str) -> pd.DataFrame:
         stock = Vnstock().stock(symbol='VN30', source='VCI')
         df = stock.quote.history(start=start_date, end=end_date)
         if df is not None and not df.empty:
+            # Ensure sorted by time ascending
+            if 'time' in df.columns:
+                df['time'] = pd.to_datetime(df['time'])
+                df = df.sort_values('time', ascending=True).reset_index(drop=True)
             return df
     except Exception as e:
         pass
@@ -570,6 +585,10 @@ def get_hnx_history(start_date: str, end_date: str) -> pd.DataFrame:
         stock = Vnstock().stock(symbol='HNX', source='VCI')
         df = stock.quote.history(start=start_date, end=end_date)
         if df is not None and not df.empty:
+            # Ensure sorted by time ascending
+            if 'time' in df.columns:
+                df['time'] = pd.to_datetime(df['time'])
+                df = df.sort_values('time', ascending=True).reset_index(drop=True)
             return df
     except Exception as e:
         pass
@@ -2395,11 +2414,16 @@ else:
             target_weights = {}
             for idx, symbol in enumerate(holdings.keys()):
                 current = current_weights[symbol]
+                
+                # Initialize with equal distribution instead of current weights
+                # This allows users to set target allocations independently
+                equal_weight = 100.0 / len(holdings) if len(holdings) > 0 else 0.0
+                
                 target = st.number_input(
                     f"{symbol} (%)", 
                     min_value=0.0, 
                     max_value=100.0, 
-                    value=round(float(current), 2),
+                    value=round(equal_weight, 2),
                     step=0.01,
                     key=f"rebal_target_{idx}_{symbol}",
                     label_visibility="collapsed"
