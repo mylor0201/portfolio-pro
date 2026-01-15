@@ -1803,6 +1803,10 @@ else:
                 start_fetch = (entry_date_obj - timedelta(days=3)).strftime('%Y-%m-%d')
                 end_fetch = (entry_date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
                 
+                
+                # Set data source
+                data_source = "Yahoo Finance"
+                
                 try:
                     df_price = get_stock_price_history(symbol, start_fetch, end_fetch, data_source)
                     if df_price is not None and not df_price.empty and 'close' in df_price.columns:
