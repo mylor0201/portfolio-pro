@@ -1879,10 +1879,30 @@ else:
         # Calculate total invested based on weights for manual input
         has_zero_shares = any(h['shares'] == 0 for h in holdings.values())
         
-        if has_zero_shares:
+        # Check for failed price fetches
+        failed_symbols = [s for s in holdings if holdings[s]['entry_price'] == 0]
+        valid_symbols = [s for s in holdings if holdings[s]['entry_price'] > 0]
+        
+        if failed_symbols:
+            st.warning(f"⚠️ Không thể lấy giá cho: {', '.join(failed_symbols)}. Các mã này sẽ bị loại khỏi phân tích.")
+            # Remove failed symbols from holdings
+            for sym in failed_symbols:
+                del holdings[sym]
+        
+        if not holdings:
+            st.error("❌ Không thể lấy giá cho bất kỳ mã nào. Vui lòng thử lại sau.")
+            st.stop()
+        
+        if has_zero_shares and valid_symbols:
             # Manual input mode - use weights to calculate shares
             # Assume portfolio value of 100 million VND
             portfolio_value = 100_000_000
+            
+            # Recalculate weights proportionally for remaining stocks
+            total_original_weight = sum(holdings[s]['weight'] for s in holdings)
+            if total_original_weight > 0:
+                for symbol in holdings:
+                    holdings[symbol]['weight'] = (holdings[symbol]['weight'] / total_original_weight) * 100
             
             for symbol in holdings:
                 weight_pct = holdings[symbol]['weight']
@@ -1898,7 +1918,7 @@ else:
             st.info("💡 **Giải pháp**: Thử lại sau vài phút hoặc dùng CSV upload với giá chính xác.")
             st.stop()
         else:
-            # Calculate weights based on investment amount
+            # Calculate weights based on investment amount (should now sum to 100%)
             for symbol in holdings:
                 if holdings[symbol]['shares'] > 0 and holdings[symbol]['entry_price'] > 0:
                     holdings[symbol]['weight'] = (holdings[symbol]['shares'] * holdings[symbol]['entry_price'] / total_invested * 100)
@@ -2298,11 +2318,16 @@ else:
             weight = holdings[symbol].get('weight', 0) if isinstance(holdings[symbol], dict) else holdings[symbol]
             current_weights[symbol] = weight
         
-        # Initialize target weights in session state if not exists
-        if 'target_weights_init' not in st.session_state:
-            st.session_state.target_weights_init = True
-            for symbol in holdings.keys():
-                st.session_state[f"target_{symbol}"] = current_weights[symbol]
+        # Create a unique key based on current portfolio to detect changes
+        portfolio_key = "_".join(sorted(holdings.keys()))
+        
+        # Reset target weights when portfolio changes
+        if 'last_portfolio_key' not in st.session_state or st.session_state.last_portfolio_key != portfolio_key:
+            st.session_state.last_portfolio_key = portfolio_key
+            # Clear old target weight keys
+            keys_to_remove = [k for k in st.session_state.keys() if k.startswith('rebal_target_')]
+            for k in keys_to_remove:
+                del st.session_state[k]
         
         # Two-column layout with equal styling
         col1, col_arrow, col2 = st.columns([2, 0.5, 2])
@@ -2509,9 +2534,9 @@ else:
                     border-radius: 10px; padding: 14px 18px; margin-bottom: 16px;'>
             <p style='color: #818CF8; font-size: 0.85rem; margin: 0;'>
                 💡 <strong>Phương pháp tính Beta:</strong><br>
-                1️⃣ <strong>Regression</strong>: Tính từ dữ liệu lịch sử (nếu đủ data > 20 ngày)<br>
-                2️⃣ <strong>Sector-based</strong>: Sử dụng beta trung bình ngành nếu không đủ data<br>
-                3️⃣ <strong>Stock-specific</strong>: Tra cứu beta đã biết của mã phổ biến
+                1️⃣ <strong>Tính từ data</strong>: Regression từ dữ liệu lịch sử (cần ≥20 ngày giao dịch)<br>
+                2️⃣ <strong>Beta chuẩn VN</strong>: Sử dụng beta đã được tính sẵn cho ~40 mã phổ biến trên HOSE<br>
+                3️⃣ <strong>TB ngành</strong>: Beta trung bình của ngành (VD: Thép=1.45, BĐS=1.35, NH=1.15)
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -2561,7 +2586,7 @@ else:
                                     calc_beta = covariance / market_variance
                                     if 0.3 <= calc_beta <= 2.5:  # Reasonable range
                                         stock_betas[symbol] = round(calc_beta, 2)
-                                        beta_methods[symbol] = "📈 Regression"
+                                        beta_methods[symbol] = "📈 Tính từ data"
                                         beta_found = True
                     except Exception as e:
                         pass  # Fall through to fallback methods
@@ -2569,14 +2594,14 @@ else:
                 # Method 2: Use stock-specific known beta
                 if not beta_found and symbol in STOCK_BETA_ESTIMATES:
                     stock_betas[symbol] = STOCK_BETA_ESTIMATES[symbol]
-                    beta_methods[symbol] = "📚 Lookup"
+                    beta_methods[symbol] = "📊 Beta chuẩn VN"
                     beta_found = True
                 
                 # Method 3: Use sector-based estimate
                 if not beta_found:
                     sector = get_industry_fallback(symbol)
                     stock_betas[symbol] = SECTOR_BETA_ESTIMATES.get(sector, 1.0)
-                    beta_methods[symbol] = f"🏢 Sector ({sector})"
+                    beta_methods[symbol] = f"🏢 TB ngành"
             
             # Calculate portfolio beta (weighted average)
             if stock_betas:
@@ -2590,11 +2615,11 @@ else:
             for symbol in holdings.keys():
                 if symbol in STOCK_BETA_ESTIMATES:
                     stock_betas[symbol] = STOCK_BETA_ESTIMATES[symbol]
-                    beta_methods[symbol] = "📚 Lookup"
+                    beta_methods[symbol] = "📊 Beta chuẩn VN"
                 else:
                     sector = get_industry_fallback(symbol)
                     stock_betas[symbol] = SECTOR_BETA_ESTIMATES.get(sector, 1.0)
-                    beta_methods[symbol] = f"🏢 Sector ({sector})"
+                    beta_methods[symbol] = f"🏢 TB ngành"
         
         # Display individual betas with methods
         with st.expander("📊 Beta từng cổ phiếu", expanded=True):
