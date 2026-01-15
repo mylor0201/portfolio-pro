@@ -736,20 +736,17 @@ def get_bank_rate_history(start_date: str, end_date: str) -> pd.DataFrame:
         # Based on VCB, BIDV, VietinBank, ACB, Techcombank, VPBank, MB, Sacombank
         current_rate = 0.052  # 5.2% - realistic average for major banks
     
-    # Build historical data using proper cumulative returns
-    # The bank rate should show cumulative return starting from 0% at day 0
-    # and growing to the annual rate proportionally over 252 trading days
+    # Show flat interest rate (not cumulative returns)
+    # User wants to see what banks pay (5.2%), not cumulative earnings over time
     annual_rate_pct = current_rate * 100  # Convert to percentage (e.g., 5.2%)
     
-    # Calculate cumulative returns for each day
-    # Formula: cumulative_return = annual_rate * (days_elapsed / 252)
-    # This shows how much you would have earned if you deposited at the start
+    # Create flat line at the bank rate
     num_days = len(dates)
-    cumulative = [(annual_rate_pct * i / 252) for i in range(num_days)]
+    flat_rate = [annual_rate_pct] * num_days  # Constant 5.2% for all days
     
     return pd.DataFrame({
         'time': dates,
-        'close': cumulative  # Now this is the cumulative return in %
+        'close': flat_rate  # Flat rate line for comparison
     })
 
 
@@ -1798,8 +1795,12 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     
-    if not YFINANCE_AVAILABLE:
-        st.error("❌ Cài đặt yfinance: `pip install yfinance`")
+    if not VNSTOCK_AVAILABLE:
+        st.error("❌ **vnstock** là bắt buộc để lấy dữ liệu chứng khoán VN")
+        st.markdown("**Cài đặt:**")
+        st.code("pip install vnstock3", language="bash")
+        st.info("💡 Sau khi cài đặt, khởi động lại dashboard")
+
     
 
 
