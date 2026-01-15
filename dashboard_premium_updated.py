@@ -1892,7 +1892,16 @@ else:
             st.error(f"❌ Lỗi: {str(e)}")
             st.stop()
     
-    metrics = data['metrics']
+    # Ensure data exists before accessing
+    if 'data' not in locals() or not data:
+        st.error("❌ Không thể thiết lập phiên phân tích. Vui lòng thử lại.")
+        st.stop()
+    
+    metrics = data.get('metrics')
+    if not metrics:
+        st.error("❌ Dữ liệu metrics không hợp lệ.")
+        st.stop()
+
     
     # ============== OVERVIEW ==============
     st.markdown("## 📈 Performance Overview")
