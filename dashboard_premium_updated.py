@@ -1649,20 +1649,6 @@ with st.sidebar:
     # Set data_source for compatibility (not used by Yahoo Finance)
     data_source = "Yahoo Finance"
     
-    # Refresh data button
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        if st.button("🔄 Refresh Dữ Liệu", use_container_width=True, help="Làm mới giá vàng và lãi suất ngân hàng"):
-            # Clear cache for gold and bank rate functions
-            get_gold_price_history.clear()
-            get_bank_rate_history.clear()
-            st.success("✅ Đã làm mới dữ liệu!")
-            st.balloons()
-    with col2:
-        # Show last update time (cached for 1 hour)
-        current_time = datetime.now().strftime("%H:%M")
-        st.caption(f"⏰ {current_time}")
-    
     st.markdown("---")
 
 
@@ -1763,7 +1749,8 @@ HPG,500,2024-03-10,28000""", language="csv")
         "Chọn benchmark", 
         ["VN-Index", "VN30", "HNX", "Vàng SJC", "Lãi suất NH"],
         default=["VN-Index"],
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        help="💡 Lãi suất NH = Lãi suất tiết kiệm 12 tháng (trung bình 8 ngân hàng lớn: VCB, BIDV, VietinBank, ACB, Techcombank, VPBank, MB, Sacombank)"
     )
     
     st.markdown("---")
@@ -2263,15 +2250,15 @@ else:
         with col2:
             st.markdown("#### Tỷ trọng mục tiêu")
             target_weights = {}
-            for symbol in holdings.keys():
+            for idx, symbol in enumerate(holdings.keys()):
                 current = current_weights[symbol]
                 target = st.number_input(
                     f"{symbol} (%)", 
                     min_value=0.0, 
                     max_value=100.0, 
-                    value=float(current),
-                    step=0.1,
-                    key=f"target_{symbol}"
+                    value=round(float(current), 2),
+                    step=0.01,
+                    key=f"rebal_target_{idx}_{symbol}"
                 )
                 target_weights[symbol] = target
         
@@ -2321,10 +2308,55 @@ else:
     # TAB 2: Risk Scenario Analysis
     with tabs[1]:
         st.markdown("### ⚠️ Risk Scenario Analysis")
-        st.caption("Dự đoán tổn thất portfolio trong các kịch bản thị trường")
+        st.caption("Stress testing với Monte Carlo simulation")
         
-        # Calculate portfolio beta (simplified - assume 1.0 for demo)
-        portfolio_beta = 1.0
+        # Calculate portfolio weighted beta from individual stocks
+        st.info("💡 **Phương pháp**: Tính Beta từ correlation giữa từng cổ phiếu với VN-Index, sau đó weighted average theo tỷ trọng portfolio")
+        
+        # Calculate beta for each stock and portfolio
+        try:
+            # Fetch VN-Index data
+            vnindex_df = get_vnindex_history(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+            
+            if not vnindex_df.empty and 'close' in vnindex_df.columns:
+                vnindex_returns = vnindex_df['close'].pct_change().dropna()
+                
+                stock_betas = {}
+                for symbol in holdings.keys():
+                    df = get_stock_price_history(symbol, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), data_source)
+                    if not df.empty and 'close' in df.columns:
+                        stock_returns = df['close'].pct_change().dropna()
+                        
+                        # Align dates
+                        common_dates = stock_returns.index.intersection(vnindex_returns.index)
+                        if len(common_dates) > 10:
+                            stock_ret_aligned = stock_returns.loc[common_dates]
+                            market_ret_aligned = vnindex_returns.loc[common_dates]
+                            
+                            # Calculate beta: Cov(stock, market) / Var(market)
+                            covariance = np.cov(stock_ret_aligned, market_ret_aligned)[0][1]
+                            market_variance = np.var(market_ret_aligned)
+                            beta = covariance / market_variance if market_variance > 0 else 1.0
+                            stock_betas[symbol] = beta
+                        else:
+                            stock_betas[symbol] = 1.0
+                    else:
+                        stock_betas[symbol] = 1.0
+                
+                # Calculate portfolio beta (weighted average)
+                portfolio_beta = sum(stock_betas.get(sym, 1.0) * current_weights.get(sym, 0) / 100 
+                                    for sym in holdings.keys())
+            else:
+                portfolio_beta = 1.0
+                stock_betas = {sym: 1.0 for sym in holdings.keys()}
+        except:
+            portfolio_beta = 1.0
+            stock_betas = {sym: 1.0 for sym in holdings.keys()}
+        
+        # Display individual betas
+        with st.expander("📊 Beta từng cổ phiếu", expanded=False):
+            beta_data = [{"Mã": sym, "Beta": f"{stock_betas.get(sym, 1.0):.2f}"} for sym in holdings.keys()]
+            st.dataframe(pd.DataFrame(beta_data), hide_index=True, use_container_width=True)
         
         scenarios = [
             {"name": "VN-Index -5%", "market_drop": -5},
